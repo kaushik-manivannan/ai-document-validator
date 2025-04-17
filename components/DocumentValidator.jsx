@@ -9,7 +9,8 @@ export default function EnhancedDocumentValidator() {
   const [isUploading, setIsUploading] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [error, setError] = useState(null);
-  const [documentType, setDocumentType] = useState('tax-clearance-online');
+  const [documentType, setDocumentType] = useState('');
+  const [autoDetectedType, setAutoDetectedType] = useState(null);
   const [formFields, setFormFields] = useState({
     organizationName: '',
     ownerName: '',
@@ -38,6 +39,8 @@ export default function EnhancedDocumentValidator() {
       setFileName(selectedFile.name);
       setValidationResult(null);
       setError(null);
+      setAutoDetectedType(null);
+      setDocumentType('');
     }
   };
 
@@ -59,7 +62,11 @@ export default function EnhancedDocumentValidator() {
       // Create form data for the file
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('documentType', documentType);
+      
+      // Only append documentType if it was manually selected
+      if (documentType) {
+        formData.append('documentType', documentType);
+      }
       
       // Add form fields to the request
       Object.entries(formFields).forEach(([key, value]) => {
@@ -73,10 +80,18 @@ export default function EnhancedDocumentValidator() {
       });
 
       if (!response.ok) {
-        throw new Error(`Error: ${response.statusText}`);
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Error: ${response.statusText}`);
       }
 
       const result = await response.json();
+      
+      // If document type was auto-detected, update the UI
+      if (result.documentInfo && result.documentInfo.detectedType) {
+        setAutoDetectedType(result.documentInfo.detectedType);
+        setDocumentType(result.documentInfo.detectedType);
+      }
+      
       setValidationResult(result);
     } catch (err) {
       console.error('Error validating document:', err);
@@ -176,21 +191,29 @@ export default function EnhancedDocumentValidator() {
       
       <div className="mb-5">
         <label className="block text-sm font-medium text-gray-700 mb-1">Document Type</label>
-        <select
-          value={documentType}
-          onChange={(e) => {
-            setDocumentType(e.target.value);
-            setValidationResult(null);
-            setError(null);
-          }}
-          className="w-full px-3 py-2 border border-gray-300 text-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          {documentTypes.map((type) => (
-            <option key={type.value} value={type.value}>
-              {type.label}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center gap-2">
+          <select
+            value={documentType}
+            onChange={(e) => {
+              setDocumentType(e.target.value);
+              setValidationResult(null);
+              setError(null);
+            }}
+            className="w-full px-3 py-2 border border-gray-300 text-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">Auto-detect (Recommended)</option>
+            {documentTypes.map((type) => (
+              <option key={type.value} value={type.value}>
+                {type.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        {autoDetectedType && (
+          <p className="text-sm text-green-600 mt-1">
+            Auto-detected as: {documentTypes.find(t => t.value === autoDetectedType)?.label}
+          </p>
+        )}
       </div>
       
       {getFormFieldsForDocumentType()}

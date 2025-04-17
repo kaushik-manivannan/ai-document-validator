@@ -13,12 +13,140 @@ function* getTextOfSpans(content, spans) {
   }
 }
 
+// Function to detect document type based on content
+function detectDocumentType(content, contentLower) {
+  // Define document type patterns and their confidence scores
+  const documentPatterns = [
+    {
+      type: 'tax-clearance-online',
+      patterns: [
+        { text: 'clearance certificate', weight: 2 },
+        { text: 'state of new jersey', weight: 1 },
+        { text: 'department of treasury', weight: 1 },
+        { text: 'division of taxation', weight: 1 },
+        { text: 'business assistance or incentive', weight: 2 }
+      ]
+    },
+    {
+      type: 'tax-clearance-manual',
+      patterns: [
+        { text: 'clearance certificate', weight: 2 },
+        { text: 'state of new jersey', weight: 1 },
+        { text: 'department of treasury', weight: 1 },
+        { text: 'division of taxation', weight: 1 },
+        { text: 'batc manual', weight: 3 }
+      ]
+    },
+    {
+      type: 'cert-formation',
+      patterns: [
+        { text: 'certificate of formation', weight: 3 },
+        { text: 'new jersey department of the treasury', weight: 1 },
+        { text: 'division of revenue', weight: 1 },
+        { text: 'entity id', weight: 1 }
+      ]
+    },
+    {
+      type: 'cert-good-standing-long',
+      patterns: [
+        { text: 'long form standing', weight: 3 },
+        { text: 'officers and directors', weight: 2 },
+        { text: 'good standing', weight: 1 },
+        { text: 'department of treasury', weight: 1 }
+      ]
+    },
+    {
+      type: 'cert-good-standing-short',
+      patterns: [
+        { text: 'good standing', weight: 2 },
+        { text: 'department of treasury', weight: 1 },
+        { text: 'division of revenue', weight: 1 }
+      ]
+    },
+    {
+      type: 'operating-agreement',
+      patterns: [
+        { text: 'operating agreement', weight: 3 },
+        { text: 'member', weight: 1 },
+        { text: 'llc', weight: 1 },
+        { text: 'limited liability company', weight: 1 }
+      ]
+    },
+    {
+      type: 'cert-incorporation',
+      patterns: [
+        { text: 'certificate of incorporation', weight: 3 },
+        { text: 'board of directors', weight: 1 },
+        { text: 'incorporators', weight: 1 }
+      ]
+    },
+    {
+      type: 'irs-determination',
+      patterns: [
+        { text: 'internal revenue service', weight: 2 },
+        { text: 'determination letter', weight: 2 },
+        { text: 'ein', weight: 1 },
+        { text: 'dln', weight: 1 }
+      ]
+    },
+    {
+      type: 'bylaws',
+      patterns: [
+        { text: 'bylaws', weight: 3 },
+        { text: 'board of directors', weight: 1 },
+        { text: 'shareholders', weight: 1 }
+      ]
+    },
+    {
+      type: 'cert-authority',
+      patterns: [
+        { text: 'certificate of authority', weight: 3 },
+        { text: 'state seal', weight: 1 },
+        { text: 'watermark', weight: 1 }
+      ]
+    },
+    {
+      type: 'cert-trade-name',
+      patterns: [
+        { text: 'certificate of trade name', weight: 3 },
+        { text: 'n.j.s.a.', weight: 2 },
+        { text: 'trade name', weight: 2 },
+        { text: 'division of revenue', weight: 1 }
+      ]
+    },
+    {
+      type: 'cert-alternative-name',
+      patterns: [
+        { text: 'registration of alternate name', weight: 3 },
+        { text: 'alternate name', weight: 2 },
+        { text: 'filed with state treasurer', weight: 2 },
+        { text: 'division of revenue', weight: 1 },
+        { text: 'po box 308', weight: 1 }
+      ]
+    }
+  ];
+
+  // Calculate confidence scores for each document type
+  const scores = documentPatterns.map(docType => {
+    const score = docType.patterns.reduce((total, pattern) => {
+      return total + (contentLower.includes(pattern.text) ? pattern.weight : 0);
+    }, 0);
+    return { type: docType.type, score };
+  });
+
+  // Sort by score and return the highest scoring type
+  scores.sort((a, b) => b.score - a.score);
+  
+  // Return the highest scoring type if it meets a minimum threshold
+  return scores[0].score > 2 ? scores[0].type : null;
+}
+
 export async function POST(request) {
   try {
     // Parse the form data
     const formData = await request.formData();
     const file = formData.get("file");
-    const documentType = formData.get("documentType") || "tax-clearance-online";
+    let documentType = formData.get("documentType");
     
     // Get additional form fields
     const organizationName = formData.get("organizationName") || "";
@@ -58,6 +186,17 @@ export async function POST(request) {
       keyValuePairs = [],
       entities = [],
     } = result;
+
+    // If no document type was provided, try to detect it
+    if (!documentType) {
+      documentType = detectDocumentType(content, content.toLowerCase());
+      if (!documentType) {
+        return NextResponse.json(
+          { error: "Could not automatically detect document type. Please select a document type manually." },
+          { status: 400 }
+        );
+      }
+    }
 
     // Validate based on document type
     const validationResults = validateDocumentByType({
@@ -1286,7 +1425,6 @@ function checkDateWithinSixMonths(content) {
 
   return false;
 }
-
 // Validation for Certificate of Trade Name
 function validateCertificateOfTradeName(content, contentLower, pages, keyValuePairs) {
   const missingElements = [];
